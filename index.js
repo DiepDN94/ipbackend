@@ -5,6 +5,7 @@ const mysql = require('mysql2');
 // cors. Need this to make stuff go.
 const cors = require('cors');
 app.use(cors());
+app.use(express.json());
 
 //connect to sakila db. use .env file for password
 require('dotenv').config(); 
@@ -31,7 +32,6 @@ app.listen(port, () => {
   console.log(`Server running on http://localhost:${port}`);
 });
 
-//
 const queryPromise = (sql, params) => {
   return new Promise((resolve, reject) => {
     db.query(sql, params, (err, results) => {
@@ -274,6 +274,69 @@ app.get('/getGenres', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+app.post('/rentFilm', async (req, res) => {
+  try {
+    const { filmId, firstName, lastName } = req.body;
+
+    if (!filmId || !firstName || !lastName) {
+      return res.status(400).json({ success: false, message: 'Please provide filmId, firstName, and lastName.' });
+    }
+
+    const customerQuery = `
+      SELECT customer_id
+      FROM customer
+      WHERE first_name = ? AND last_name = ?
+    `;
+
+    const [customerRow] = await queryPromise(customerQuery, [firstName, lastName]);
+
+    if (!customerRow) {
+      return res.status(404).json({ success: false, message: 'Customer not found.' });
+    }
+
+    const customerId = customerRow.customer_id;
+
+    // get inventory_id
+    const findAvailableCopySql = `
+      SELECT inventory.inventory_id
+      FROM inventory
+      LEFT JOIN rental ON inventory.inventory_id = rental.inventory_id AND rental.return_date IS NULL
+      WHERE inventory.film_id = ? AND rental.inventory_id IS NULL
+      LIMIT 1
+    `;
+
+    const [availableCopy] = await queryPromise(findAvailableCopySql, [filmId]);
+
+    if (!availableCopy) {
+      return res.status(400).json({ success: false, message: 'No available copies of the film.' });
+    }
+
+    const inventoryId = availableCopy.inventory_id;
+
+    const createRentalSql = `
+      INSERT INTO rental (rental_date, inventory_id, customer_id, return_date, staff_id)
+      VALUES (NOW(), (SELECT inventory_id FROM inventory WHERE inventory_id = ? LIMIT 1), ?, NULL, 1);
+    `;
+
+    await queryPromise(createRentalSql, [inventoryId, customerId]);
+
+    // update inventory
+    const updateInventorySql = `
+      UPDATE inventory
+      SET last_update = NOW()
+      WHERE inventory_id = ?
+    `;
+
+    await queryPromise(updateInventorySql, [inventoryId]);
+
+    return res.status(200).json({ success: true, message: 'Film rented successfully.' });
+  } catch (error) {
+    console.error('Error renting the film:', error);
+    return res.status(500).json({ success: false, message: 'Error renting the film.' });
+  }
+});
+
 
 }//end Movie Page
 
