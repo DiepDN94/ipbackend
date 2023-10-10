@@ -346,9 +346,13 @@ app.post('/rentFilm', async (req, res) => {
     const search = req.query.search || ''; 
     try {
       const sql = `
-      SELECT customer.customer_id, customer.first_name, customer.last_name, customer.email, address.address
+      SELECT 
+        customer.customer_id, customer.first_name, customer.last_name, customer.email, 
+        address.address, address.phone, address.district, city.city, country.country 
       FROM customer
       JOIN address ON customer.address_id = address.address_id
+      JOIN city ON address.city_id = city.city_id
+      JOIN country ON city.country_id = country.country_id
       WHERE 
         customer.first_name LIKE ? OR
         customer.last_name LIKE ? OR
@@ -358,17 +362,58 @@ app.post('/rentFilm', async (req, res) => {
       const customers = await queryPromise(sql, [searchValue, searchValue, searchValue]);
       res.json(customers);
     } catch (err) {
-      console.error("Error in /customer:", err);
+      console.error("Error in /getCustomer:", err);
       res.status(500).send(err.message);
     }
   });
+ 
+  
+app.get('/getCustomerDetails', async(req, res) => {
+  const customerId = req.query.customerId;
 
-  app.post('/addCustomer', async (req, res) => {
+  if(!customerId) {
+      return res.status(400).json({ success: false, message: 'CustomerId is required.' });
+  }
+
+  try {
+    const customerSql = `SELECT * FROM customer WHERE customer_id = ?`;
+    const [customer] = await queryPromise(customerSql, [customerId]);
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found.' });
+    }
+
+    const addressSql = `SELECT * FROM address WHERE address_id = ?`;
+    const [address] = await queryPromise(addressSql, [customer.address_id]);
+
+    const citySql = `SELECT * FROM city WHERE city_id = ?`;
+    const [city] = await queryPromise(citySql, [address.city_id]);
+
+    const countrySql = `SELECT * FROM country WHERE country_id = ?`;
+    const [country] = await queryPromise(countrySql, [city.country_id]);
+
+    const customerDetails = {
+      ...customer,
+      ...address,
+      ...city,
+      ...country
+  };
+  res.status(200).json({ success: true, data: customerDetails });
+  } catch (error) {
+    console.error('Error fetching customer details:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error fetching customer details.' 
+    });
+  }
+});
+
+app.post('/addCustomer', async (req, res) => {
     try {
         const {
-            store_id, first_name, last_name, email,
-            address, address2 = null, district, city, country,
-            postal_code = null, phone = null, active
+          store_id, first_name, last_name, email,
+          address, address2 = null, district, city, country,
+          postal_code = null, phone = null, active
         } = req.body;
 
         if (!store_id || !first_name || !last_name || !email || !address || !district || !city || !country || typeof active === 'undefined') {
@@ -420,6 +465,67 @@ app.post('/rentFilm', async (req, res) => {
         console.error('Error adding customer:', error);
         res.status(500).json({ success: false, message: 'Error adding customer.' });
     }
+});
+
+app.post('/updateCustomerDetails', async (req, res) => {
+  try {
+      const { customerId, fieldName, newValue } = req.body;
+
+      if (!customerId || !fieldName || !newValue) {
+          return res.status(400).json({ success: false, message: 'Missing required fields.' });
+      }
+
+      let tableName = "customer";
+      if (["address", "phone", "district", "city_id"].includes(fieldName)) {
+          tableName = "address";
+      } else if (fieldName === "city") {
+          tableName = "city";
+      } else if (fieldName === "country") {
+          tableName = "country";
+      }
+
+      const sql = `UPDATE ${tableName} SET ${fieldName} = ? WHERE ${tableName}_id = ?`;
+      await queryPromise(sql, [newValue, customerId]);
+
+      res.status(200).json({ 
+        success: true,
+         message: 'Customer details updated successfully.' 
+      });
+
+  } catch (error) {
+      console.error('Error updating customer details:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Error updating customer details.' 
+      });
+  }
+});
+
+app.post('/deleteCustomer', async (req, res) => {
+  const { customerId } = req.body;
+
+  if (!customerId) {
+    return res.status(400).json({
+      success: false,
+      message: 'CustomerId is required.'
+    });
+  }
+
+  try {
+    const sql = 'DELETE FROM customer WHERE customer_id = ?';
+    await queryPromise(sql, [customerId]);
+    
+    res.json({
+      success: true,
+      message: 'Customer successfully deleted.'
+    });
+  } catch (err) {
+    console.error("Error in /deleteCustomer:", err);
+    res.status(500).send({
+      success: false,
+      message: 'Error deleting customer.'
+    });
+  }
 });
 
 }//end Customer Page
