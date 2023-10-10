@@ -341,8 +341,9 @@ app.post('/rentFilm', async (req, res) => {
 }//end Movie Page
 
 {//Customer Page
-  app.get('/customer', async (req, res) => {
-    const search = req.query.search || ''; // Get the search text from the query parameters
+  
+  app.get('/getCustomer', async (req, res) => {
+    const search = req.query.search || ''; 
     try {
       const sql = `
       SELECT customer.customer_id, customer.first_name, customer.last_name, customer.email, address.address
@@ -353,7 +354,7 @@ app.post('/rentFilm', async (req, res) => {
         customer.last_name LIKE ? OR
         customer.email LIKE ?
       `;
-      const searchValue = `%${search}%`; // Wrap the search term with '%' for a partial match
+      const searchValue = `%${search}%`; 
       const customers = await queryPromise(sql, [searchValue, searchValue, searchValue]);
       res.json(customers);
     } catch (err) {
@@ -362,43 +363,63 @@ app.post('/rentFilm', async (req, res) => {
     }
   });
 
-  const getCityId = async (cityName) => {
-    const result = await queryPromise('SELECT city_id FROM city WHERE city = ?', [cityName]);
-    
-    if (!result.length) {
-        throw new Error('City not found!');
-    }
-    
-    return result[0].city_id;
-  }
-
-  
-  const insertAddress = async (addressData, cityId) => {
-    const result = await queryPromise('INSERT INTO address (address, address2, district, postal_code, phone, location, city_id) VALUES (?, ?, ?, ?, ?, ?, ?)', 
-        [addressData.address, addressData.address2, addressData.district, addressData.postalCode, addressData.phone, addressData.location, cityId]);
-    
-    return result.insertId; // This is the address_id for the new address
-  }
-
-
-  const insertCustomer = async (customerData, addressId) => {
-    const currentDate = new Date().toISOString().slice(0, 19).replace('T', ' ');
-
-    const result = await queryPromise('INSERT INTO customer (store_id, first_name, last_name, email, address_id, active, create_date, last_update) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', 
-        [customerData.storeId, customerData.firstName, customerData.lastName, customerData.email, addressId, 1, currentDate, currentDate]);
-    
-    return result.insertId; // This is the customer_id for the new customer
-  }
-
-  const createNewCustomer = async (customerData, addressData, cityName) => {
+  app.post('/addCustomer', async (req, res) => {
     try {
-        const cityId = await getCityId(cityName);
-        const addressId = await insertAddress(addressData, cityId);
-        const customerId = await insertCustomer(customerData, addressId);
+        const {
+            store_id, first_name, last_name, email,
+            address, address2 = null, district, city, country,
+            postal_code = null, phone = null, active
+        } = req.body;
 
-        return customerId;
+        if (!store_id || !first_name || !last_name || !email || !address || !district || !city || !country || typeof active === 'undefined') {
+            return res.status(400).json({ success: false, message: 'Missing required fields.' });
+        }
+
+        // Check and insert country
+        let [countryResult] = await queryPromise(`SELECT country_id FROM country WHERE country = ?`, [country]);
+        if (!countryResult) {
+            await queryPromise(`INSERT INTO country (country, last_update) VALUES (?, NOW())`, [country]);
+            [countryResult] = await queryPromise(`SELECT LAST_INSERT_ID() as country_id`);
+        }
+        const countryId = countryResult.country_id;
+
+        // Check and insert city
+        let [cityResult] = await queryPromise(`SELECT city_id FROM city WHERE city = ? AND country_id = ?`, [city, countryId]);
+        if (!cityResult) {
+            await queryPromise(`INSERT INTO city (city, country_id, last_update) VALUES (?, ?, NOW())`, [city, countryId]);
+            [cityResult] = await queryPromise(`SELECT LAST_INSERT_ID() as city_id`);
+        }
+        const cityId = cityResult.city_id;
+
+        let phoneValue = phone || '';
+        let postalCodeValue = postal_code || '';
+        let defaultLocation = 'POINT(0 0)'; // Default to coordinates (0,0) for location
+       
+        // Check and insert address
+        let [addressResult] = await queryPromise(`SELECT address_id FROM address WHERE address = ? AND city_id = ?`, [address, cityId]);
+        if (!addressResult) {
+            await queryPromise(`
+                INSERT INTO address (address, address2, district, city_id, postal_code, phone, location, last_update)
+                VALUES (?, ?, ?, ?, ?, ?, ST_GeomFromText(?), NOW())
+            `, [address, address2, district, cityId, postalCodeValue, phoneValue, defaultLocation]);
+            [addressResult] = await queryPromise(`SELECT LAST_INSERT_ID() as address_id`);
+        }
+        
+        const addressId = addressResult.address_id;
+
+        // Finally insert customer
+        const sql = `
+            INSERT INTO customer (store_id, first_name, last_name, email, address_id, active, create_date, last_update)
+            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+        `;
+        await queryPromise(sql, [store_id, first_name, last_name, email, addressId, active]);
+
+        res.status(200).json({ success: true, message: 'Customer added successfully.' });
+
     } catch (error) {
-        throw error;
+        console.error('Error adding customer:', error);
+        res.status(500).json({ success: false, message: 'Error adding customer.' });
     }
-  }
+});
+
 }//end Customer Page
