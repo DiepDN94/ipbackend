@@ -2,7 +2,7 @@ const express = require('express');
 const app = express();
 const mysql = require('mysql2');
 
-// cors. Need this to make stuff go.
+// cors.
 const cors = require('cors');
 app.use(cors());
 app.use(express.json());
@@ -27,7 +27,6 @@ app.get('/health-check', (req, res) => {
   res.send('Hello World');
 });
 
-const port = 3001;
 if (process.env.NODE_ENV !== 'test') {
   const port = 3001;
   app.listen(port, () => {
@@ -35,8 +34,7 @@ if (process.env.NODE_ENV !== 'test') {
   });
 }
 
-
-module.exports = app;  // export ap
+module.exports = app;  // export app
 
 const queryPromise = (sql, params) => {
   return new Promise((resolve, reject) => {
@@ -126,7 +124,7 @@ app.get('/top5Actors', async (req, res) => {
   }
 });
 
-app.get('/filmDetails/:film_id', async (req, res) => { // Was /filmDetails
+app.get('/filmDetails/:film_id', async (req, res) => { 
   const film_id = req.params.film_id;
   const filmSql = `SELECT * FROM film WHERE film_id = ?`;
   const languageSql = 'SELECT name FROM language WHERE language_id = ?';

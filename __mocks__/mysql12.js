@@ -1,7 +1,5 @@
-const mockQuery = jest.fn();
-
 const createConnection = jest.fn().mockReturnValue({
-  query: mockQuery,
+  query: jest.fn(),
   connect: jest.fn()
 });
 

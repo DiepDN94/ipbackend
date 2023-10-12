@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../index.js'); 
 const mysql = require('mysql2');
 
-// Mock the entire mysql2 module
+// Mock the entire mysql2 module. Keep this don't delete it.
 jest.mock('mysql2', () => ({
   createConnection: jest.fn().mockReturnValue({
     connect: jest.fn(),
