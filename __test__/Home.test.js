@@ -16,7 +16,7 @@ describe('Home API Endpoints', () => {
   });
 
   it('fetches the film details for a given film ID', async () => {
-    const film_id = 1; // This is a sample film ID for testing
+    const film_id = 1;
     const res = await request(server).get(`/filmDetails/${film_id}`);
     expect(res.statusCode).toEqual(200);
     expect(res.body).toHaveProperty('title');
