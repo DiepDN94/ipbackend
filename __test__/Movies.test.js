@@ -20,6 +20,9 @@ describe('/searchMovies', () => {
     });
     expect(response.status).toBe(200);
     expect(response.body).toBeInstanceOf(Array);
+    response.body.forEach(movie => {
+      expect(movie.actors).toContain('ExampleActorName');
+    });
   });
 
   it('should return movies of the given genre', async () => {
@@ -28,6 +31,9 @@ describe('/searchMovies', () => {
     });
     expect(response.status).toBe(200);
     expect(response.body).toBeInstanceOf(Array);
+    response.body.forEach(movie => {
+      expect(movie.genre).toContain('ExampleGenre');
+    });
   });
 
   it('should return movies that match a combination of search criteria', async () => {
@@ -38,6 +44,11 @@ describe('/searchMovies', () => {
     });
     expect(response.status).toBe(200);
     expect(response.body).toBeInstanceOf(Array);
+    response.body.forEach(movie => {
+      expect(movie.title).toContain('ExampleFilmName');
+      expect(movie.actors).toContain('ExampleActorName');
+      expect(movie.genre).toContain('ExampleGenre');
+    });
   });
 
   it('should return an empty array when no movies match the criteria', async () => {
