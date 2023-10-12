@@ -28,9 +28,15 @@ app.get('/health-check', (req, res) => {
 });
 
 const port = 3001;
-app.listen(port, () => {
-  console.log(`Server running on http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  const port = 3001;
+  app.listen(port, () => {
+    console.log(`Server running on http://localhost:${port}`);
+  });
+}
+
+
+module.exports = app;  // export ap
 
 const queryPromise = (sql, params) => {
   return new Promise((resolve, reject) => {
@@ -59,6 +65,7 @@ app.get('/generateCustomerReport', async (req, res) => {
     const customers = await queryPromise(sql);
 
     const doc = new PDFDocument;
+    res.setHeader('Content-Type', 'application/pdf');  // Explicitly set Content-Type
     doc.pipe(res);
 
     doc.fontSize(20).text('Customers Who Rented Movies', { align: 'center' });
@@ -74,15 +81,10 @@ app.get('/generateCustomerReport', async (req, res) => {
     res.status(500).send("Error generating report");
   }
 });
-  
-  
 }//end pdf report
 
 {//Homepage
-/*
-Get top 5 films for front page
-STOP TRYING TO MAKE THIS GENERIC
-*/
+
 app.get('/top5Films', async (req, res) => {
   // SQL for top 5 films
   const sql = `
@@ -102,9 +104,7 @@ app.get('/top5Films', async (req, res) => {
     return res.send({err});
   }
 });
-  
 
-//Get top 5 actors for front page
 app.get('/top5Actors', async (req, res) => {
   //SQL for top 5 actors
   const sql = `
@@ -126,11 +126,6 @@ app.get('/top5Actors', async (req, res) => {
   }
 });
 
-/*
-Originally had two different functions one gets Film details and another got language details
-Decided to combine the two to reduce the amount of query's to the server since everytime Film details was called
-language details was also called. Made sense to just combine the two routes instead of two different routes for one call.
-*/
 app.get('/filmDetails/:film_id', async (req, res) => { // Was /filmDetails
   const film_id = req.params.film_id;
   const filmSql = `SELECT * FROM film WHERE film_id = ?`;
@@ -150,10 +145,6 @@ app.get('/filmDetails/:film_id', async (req, res) => { // Was /filmDetails
   }
 });
 
-/*
-Get actor's details and their top 5 rented movies.
-MAKE WORK WITH GENERIC TOP 5 LATER.
-*/
 app.get('/actorInfo/:actor_id', async (req, res) => {
   const actor_id = req.params.actor_id;
 
@@ -342,32 +333,31 @@ app.post('/rentFilm', async (req, res) => {
 
 {//Customer Page
   
-  app.get('/getCustomer', async (req, res) => {
-    const search = req.query.search || ''; 
-    try {
-      const sql = `
-      SELECT 
-        customer.customer_id, customer.first_name, customer.last_name, customer.email, 
-        address.address, address.phone, address.district, city.city, country.country 
-      FROM customer
-      JOIN address ON customer.address_id = address.address_id
-      JOIN city ON address.city_id = city.city_id
-      JOIN country ON city.country_id = country.country_id
-      WHERE 
-        customer.first_name LIKE ? OR
-        customer.last_name LIKE ? OR
-        customer.email LIKE ?
-      `;
-      const searchValue = `%${search}%`; 
-      const customers = await queryPromise(sql, [searchValue, searchValue, searchValue]);
-      res.json(customers);
-    } catch (err) {
-      console.error("Error in /getCustomer:", err);
-      res.status(500).send(err.message);
-    }
-  });
+app.get('/getCustomer', async (req, res) => {
+  const search = req.query.search || ''; 
+  try {
+    const sql = `
+    SELECT 
+      customer.customer_id, customer.first_name, customer.last_name, customer.email, 
+      address.address, address.phone, address.district, city.city, country.country 
+    FROM customer
+    JOIN address ON customer.address_id = address.address_id
+    JOIN city ON address.city_id = city.city_id
+    JOIN country ON city.country_id = country.country_id
+    WHERE 
+      customer.first_name LIKE ? OR
+      customer.last_name LIKE ? OR
+      customer.email LIKE ?
+    `;
+    const searchValue = `%${search}%`; 
+    const customers = await queryPromise(sql, [searchValue, searchValue, searchValue]);
+    res.json(customers);
+  } catch (err) {
+    console.error("Error in /getCustomer:", err);
+    res.status(500).send(err.message);
+  }
+});
  
-  
 app.get('/getCustomerDetails', async(req, res) => {
   const customerId = req.query.customerId;
 
@@ -410,60 +400,56 @@ app.get('/getCustomerDetails', async(req, res) => {
 
 app.post('/addCustomer', async (req, res) => {
     try {
-        const {
-          store_id, first_name, last_name, email,
-          address, address2 = null, district, city, country,
-          postal_code = null, phone = null, active
-        } = req.body;
+      const {
+        store_id, first_name, last_name, email,
+        address, address2 = null, district, city, country,
+        postal_code = null, phone = null, active
+      } = req.body;
 
-        if (!store_id || !first_name || !last_name || !email || !address || !district || !city || !country || typeof active === 'undefined') {
-            return res.status(400).json({ success: false, message: 'Missing required fields.' });
-        }
+      if (!store_id || !first_name || !last_name || !email || !address || !district || !city || !country || typeof active === 'undefined') {
+        return res.status(400).json({ success: false, message: 'Missing required fields.' });
+      }
 
-        // Check and insert country
-        let [countryResult] = await queryPromise(`SELECT country_id FROM country WHERE country = ?`, [country]);
-        if (!countryResult) {
-            await queryPromise(`INSERT INTO country (country, last_update) VALUES (?, NOW())`, [country]);
-            [countryResult] = await queryPromise(`SELECT LAST_INSERT_ID() as country_id`);
-        }
-        const countryId = countryResult.country_id;
+      let [countryResult] = await queryPromise(`SELECT country_id FROM country WHERE country = ?`, [country]);
+      if (!countryResult) {
+        await queryPromise(`INSERT INTO country (country, last_update) VALUES (?, NOW())`, [country]);
+        [countryResult] = await queryPromise(`SELECT LAST_INSERT_ID() as country_id`);
+      }
+      const countryId = countryResult.country_id;
 
-        // Check and insert city
-        let [cityResult] = await queryPromise(`SELECT city_id FROM city WHERE city = ? AND country_id = ?`, [city, countryId]);
-        if (!cityResult) {
-            await queryPromise(`INSERT INTO city (city, country_id, last_update) VALUES (?, ?, NOW())`, [city, countryId]);
-            [cityResult] = await queryPromise(`SELECT LAST_INSERT_ID() as city_id`);
-        }
-        const cityId = cityResult.city_id;
+      let [cityResult] = await queryPromise(`SELECT city_id FROM city WHERE city = ? AND country_id = ?`, [city, countryId]);
+      if (!cityResult) {
+        await queryPromise(`INSERT INTO city (city, country_id, last_update) VALUES (?, ?, NOW())`, [city, countryId]);
+        [cityResult] = await queryPromise(`SELECT LAST_INSERT_ID() as city_id`);
+      }
+      const cityId = cityResult.city_id;
 
-        let phoneValue = phone || '';
-        let postalCodeValue = postal_code || '';
-        let defaultLocation = 'POINT(0 0)'; // Default to coordinates (0,0) for location
-       
-        // Check and insert address
-        let [addressResult] = await queryPromise(`SELECT address_id FROM address WHERE address = ? AND city_id = ?`, [address, cityId]);
-        if (!addressResult) {
-            await queryPromise(`
-                INSERT INTO address (address, address2, district, city_id, postal_code, phone, location, last_update)
-                VALUES (?, ?, ?, ?, ?, ?, ST_GeomFromText(?), NOW())
-            `, [address, address2, district, cityId, postalCodeValue, phoneValue, defaultLocation]);
-            [addressResult] = await queryPromise(`SELECT LAST_INSERT_ID() as address_id`);
-        }
-        
-        const addressId = addressResult.address_id;
+      let phoneValue = phone || '';
+      let postalCodeValue = postal_code || '';
+      let defaultLocation = 'POINT(0 0)'; 
+      
+      let [addressResult] = await queryPromise(`SELECT address_id FROM address WHERE address = ? AND city_id = ?`, [address, cityId]);
+      if (!addressResult) {
+        await queryPromise(`
+          INSERT INTO address (address, address2, district, city_id, postal_code, phone, location, last_update)
+          VALUES (?, ?, ?, ?, ?, ?, ST_GeomFromText(?), NOW())
+        `, [address, address2, district, cityId, postalCodeValue, phoneValue, defaultLocation]);
+        [addressResult] = await queryPromise(`SELECT LAST_INSERT_ID() as address_id`);
+      }
+      
+      const addressId = addressResult.address_id;
 
-        // Finally insert customer
-        const sql = `
-            INSERT INTO customer (store_id, first_name, last_name, email, address_id, active, create_date, last_update)
-            VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
-        `;
-        await queryPromise(sql, [store_id, first_name, last_name, email, addressId, active]);
+      const sql = `
+        INSERT INTO customer (store_id, first_name, last_name, email, address_id, active, create_date, last_update)
+        VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
+      `;
+      await queryPromise(sql, [store_id, first_name, last_name, email, addressId, active]);
 
-        res.status(200).json({ success: true, message: 'Customer added successfully.' });
+      res.status(200).json({ success: true, message: 'Customer added successfully.' });
 
     } catch (error) {
-        console.error('Error adding customer:', error);
-        res.status(500).json({ success: false, message: 'Error adding customer.' });
+      console.error('Error adding customer:', error);
+      res.status(500).json({ success: false, message: 'Error adding customer.' });
     }
 });
 
@@ -472,16 +458,16 @@ app.post('/updateCustomerDetails', async (req, res) => {
       const { customerId, fieldName, newValue } = req.body;
 
       if (!customerId || !fieldName || !newValue) {
-          return res.status(400).json({ success: false, message: 'Missing required fields.' });
+        return res.status(400).json({ success: false, message: 'Missing required fields.' });
       }
 
       let tableName = "customer";
       if (["address", "phone", "district", "city_id"].includes(fieldName)) {
-          tableName = "address";
+        tableName = "address";
       } else if (fieldName === "city") {
-          tableName = "city";
+        tableName = "city";
       } else if (fieldName === "country") {
-          tableName = "country";
+        tableName = "country";
       }
 
       const sql = `UPDATE ${tableName} SET ${fieldName} = ? WHERE ${tableName}_id = ?`;
@@ -489,7 +475,7 @@ app.post('/updateCustomerDetails', async (req, res) => {
 
       res.status(200).json({ 
         success: true,
-         message: 'Customer details updated successfully.' 
+        message: 'Customer details updated successfully.' 
       });
 
   } catch (error) {
@@ -525,6 +511,57 @@ app.post('/deleteCustomer', async (req, res) => {
       success: false,
       message: 'Error deleting customer.'
     });
+  }
+});
+
+app.get('/customerDetails/:customerId', async (req, res) => {
+  const customerId = req.params.customerId;
+
+  try {
+    const customerSql = `SELECT * FROM customer WHERE customer_id = ?`;
+    const [customer] = await queryPromise(customerSql, [customerId]);
+
+    if (!customer) {
+      return res.status(404).json({ success: false, message: 'Customer not found.' });
+    }
+
+    const rentalsSql = `
+      SELECT film.film_id, film.title, rental.rental_id 
+      FROM film
+      JOIN inventory ON film.film_id = inventory.film_id
+      JOIN rental ON inventory.inventory_id = rental.inventory_id
+      WHERE rental.customer_id = ? AND rental.return_date IS NULL
+    `;
+    const rentedMovies = await queryPromise(rentalsSql, [customerId]);
+
+    res.json({
+      customer,
+      rentedMovies
+    });
+  } catch (error) {
+    console.error('Error fetching customer details and rented movies:', error);
+    res.status(500).json({ success: false, message: 'Error fetching customer details and rented movies.' });
+  }
+});
+
+app.post('/returnMovie', async (req, res) => {
+  const { rentalId } = req.body;
+
+  if (!rentalId) {
+    return res.status(400).json({ success: false, message: 'RentalId is required.' });
+  }
+
+  try {
+    const sql = `UPDATE rental SET return_date = NOW() WHERE rental_id = ?`;
+    await queryPromise(sql, [rentalId]);
+
+    res.json({
+      success: true,
+      message: 'Movie successfully returned.'
+    });
+  } catch (error) {
+    console.error('Error marking the movie as returned:', error);
+    res.status(500).json({ success: false, message: 'Error marking the movie as returned.' });
   }
 });
 
